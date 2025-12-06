@@ -1,0 +1,91 @@
+﻿
+<div id="map_holder">
+   
+    <div id="map">
+        @* <input id="pac-input" class="controls" type="text" placeholder="Search location" />        *@
+    </div>
+
+</div>
+@section HeadScripts {
+    <script>
+        (g => {
+            var h, a, k,
+            p = "The Google Maps JavaScript API",
+            c = "google",
+            l = "importLibrary",
+            q = "__ib__",
+            m = document,
+            b = window;
+
+            b = b[c] || (b[c] = {});
+            var d = b.maps || (b.maps = {}),
+                r = new Set(),
+                e = new URLSearchParams(),
+                u = () =>
+                    h ||
+                    (h = new Promise(async (resolve, reject) => {
+                        a = m.createElement("script");
+                        e.set("libraries", [...r] + "");
+                        for (k in g)
+                            e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+                        e.set("callback", c + ".maps." + q);
+                        a.src = `https://maps.${c}apis.com/maps/api/js?` + e;
+                        d[q] = resolve;
+                        a.onerror = () => reject(Error(p + " could not load."));
+                        a.nonce = m.querySelector("script[nonce]")?.nonce || "";
+                        m.head.append(a);
+                    }));
+
+            if (d[l]) console.warn(p + " only loads once. Ignoring:", g);
+            else {
+                d[l] = (lib, ...rest) => r.add(lib) && u().then(() => d[l](lib, ...rest));
+            }
+        })({
+            key: "@ViewBag.Key",
+            v: "weekly"
+        });
+    </script>
+}
+@section Scripts {
+    <script>
+        const init = async () => {
+
+            const { Map } = await google.maps.importLibrary("maps");
+
+            const desMoines = { lat: 41.59, lng: -93.62 };
+            const input = document.getElementById("pac-input");
+            const map = new Map(document.getElementById("map"), {
+                center: desMoines,
+                zoom: 12,
+                mapId: 'MapAndWeatherMap'
+            });
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
+
+            map.addListener("click", (mapsMouseEvent) => {
+                debugger;
+                const latLong = mapsMouseEvent.latLng.toJSON();
+                getWeatherForecast(latLong.lat, latLong.lng);
+            });
+
+        };
+        const getWeatherForecast = async (lat, long) => {
+            const pointUrl = `https://api.weather.gov/points/${lat},${long}`;
+
+            const pointRes = await fetch(pointUrl, {
+                headers: { "User-Agent": "MapsAndWeatherApp" }
+            });
+
+            const pointJson = await pointRes.json();
+            const forecastUrl = pointJson.properties.forecast;
+
+            const forecastRes = await fetch(forecastUrl, {
+                headers: { "User-Agent": "MapsAndWeatherApp" }
+            });
+
+            const forecast = await forecastRes.json();
+            console.log(forecast.properties.periods);
+        };
+        init();
+    </script>
+
+}
