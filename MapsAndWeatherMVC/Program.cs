@@ -11,6 +11,7 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.ConfigureMapsAndWeatherServices(builder.Configuration);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddApplicationInsightsTelemetry();
 
 
 var app = builder.Build();
