@@ -5,6 +5,7 @@ using MapsAndWeatherService.Interfaces;
 using MapsAndWeatherService.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace MapsAndWeatherService.Extensions
@@ -21,14 +22,22 @@ namespace MapsAndWeatherService.Extensions
             services.ConfigureMapsAndWeatherRepositories(configuration);
             services.Configure<ServiceBusOptions>(configuration.GetSection("AzureServiceBus"));
             services.AddSingleton<ServiceBusClient>((provider) =>             
-            {      
-                ServiceBusOptions options = provider.GetRequiredService<IOptions<ServiceBusOptions>>().Value; 
+            {
+                IHostEnvironment environment = provider.GetRequiredService<IHostEnvironment>();
+                ServiceBusOptions options = provider.GetRequiredService<IOptions<ServiceBusOptions>>().Value;
                 ServiceBusClientOptions clientOptions = new()
                 {
                     TransportType = ServiceBusTransportType.AmqpWebSockets
                 };
-                ServiceBusClient ret = new(options.FullyQualifiedNamespace, new DefaultAzureCredential(), clientOptions);
-                return ret;                
+                if (environment.IsDevelopment())
+                {
+                    string connectionString = configuration.GetConnectionString("AZURE_SERVICE_BUS_CONNECTIONSTRING") ?? string.Empty;
+                    return new ServiceBusClient(connectionString, clientOptions);
+                }
+                else
+                {   
+                    return new ServiceBusClient(options.FullyQualifiedNamespace, new DefaultAzureCredential(), clientOptions);                    
+                }
             });
             services.AddSingleton<ServiceBusSender>((provider) => {
                 ServiceBusOptions options = provider.GetRequiredService<IOptions<ServiceBusOptions>>().Value;

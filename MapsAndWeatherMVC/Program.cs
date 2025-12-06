@@ -1,8 +1,9 @@
+using MapsAndWeatherMVC.MiddleWare;
 using MapsAndWeatherService.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
 builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
 builder.Configuration.AddEnvironmentVariables();
 
@@ -10,7 +11,7 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.ConfigureMapsAndWeatherServices(builder.Configuration);
 
 builder.Services.AddControllersWithViews();
-  
+
 
 var app = builder.Build();
 // Configure the HTTP request pipeline.
@@ -25,6 +26,8 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+app.UseMiddleware<RequestLoggerMiddleWare>();
 // app.UseCors();
 
 //app.UseAuthentication();
@@ -35,5 +38,7 @@ app.MapControllers();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+
 
 app.Run();
