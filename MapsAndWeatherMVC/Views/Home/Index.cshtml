@@ -1,11 +1,11 @@
 ﻿
-<div id="map_holder">
-   
-    <div id="map">
-        @* <input id="pac-input" class="controls" type="text" placeholder="Search location" />        *@
-    </div>
 
-</div>
+   
+<gmp-map center="41.59,-93.62" zoom="7" map-id="MapAndWeatherMap">
+    <gmp-place-autocomplete id="pac-input" slot="control-inline-start-block-start" class="controls" placeholder="Search location" />
+</gmp-map>
+
+
 @section HeadScripts {
     <script>
         (g => {
@@ -48,43 +48,62 @@
 }
 @section Scripts {
     <script>
+        const mapElement = document.querySelector('gmp-map');
+        const placeAutocomplete = document.querySelector('gmp-place-autocomplete');
         const init = async () => {
-
-            const { Map } = await google.maps.importLibrary("maps");
-
-            const desMoines = { lat: 41.59, lng: -93.62 };
-            const input = document.getElementById("pac-input");
-            const map = new Map(document.getElementById("map"), {
-                center: desMoines,
-                zoom: 12,
-                mapId: 'MapAndWeatherMap'
+            const [] = await Promise.all([ 
+                google.maps.importLibrary("maps"),
+                google.maps.importLibrary('marker'),
+                google.maps.importLibrary('places'),
+            ]);
+            innerMap = mapElement.innerMap;
+            innerMap.setOptions({
+                mapTypeControl: false
             });
-            map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
-
-            map.addListener("click", (mapsMouseEvent) => {
-                debugger;
-                const latLong = mapsMouseEvent.latLng.toJSON();
-                getWeatherForecast(latLong.lat, latLong.lng);
+            marker = new google.maps.marker.AdvancedMarkerElement({
+                map: innerMap,
             });
+            placeAutocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+                const place = placePrediction.toPlace();
+                await place.fetchFields({
+                    fields: ['displayName', 'formattedAddress', 'location'],
+                });
+                // If the place has a geometry, then present it on a map.
+                if (place.viewport) {
+                    innerMap.fitBounds(place.viewport);
+                }
+                else {
+                    innerMap.setCenter(place.location);
+                    innerMap.setZoom(13);
+                }
+                
+                marker.position = place.location;
+            });
+
+            // map.addListener("click", (mapsMouseEvent) => {
+            //     debugger;
+            //     const latLong = mapsMouseEvent.latLng.toJSON();
+            //     getWeatherForecast(latLong.lat, latLong.lng);
+            // });
 
         };
-        const getWeatherForecast = async (lat, long) => {
-            const pointUrl = `https://api.weather.gov/points/${lat},${long}`;
+        // const getWeatherForecast = async (lat, long) => {
+        //     const pointUrl = `https://api.weather.gov/points/${lat},${long}`;
 
-            const pointRes = await fetch(pointUrl, {
-                headers: { "User-Agent": "MapsAndWeatherApp" }
-            });
+        //     const pointRes = await fetch(pointUrl, {
+        //         headers: { "User-Agent": "MapsAndWeatherApp" }
+        //     });
 
-            const pointJson = await pointRes.json();
-            const forecastUrl = pointJson.properties.forecast;
+        //     const pointJson = await pointRes.json();
+        //     const forecastUrl = pointJson.properties.forecast;
 
-            const forecastRes = await fetch(forecastUrl, {
-                headers: { "User-Agent": "MapsAndWeatherApp" }
-            });
+        //     const forecastRes = await fetch(forecastUrl, {
+        //         headers: { "User-Agent": "MapsAndWeatherApp" }
+        //     });
 
-            const forecast = await forecastRes.json();
-            console.log(forecast.properties.periods);
-        };
+        //     const forecast = await forecastRes.json();
+        //     console.log(forecast.properties.periods);
+        // };
         init();
     </script>
 
