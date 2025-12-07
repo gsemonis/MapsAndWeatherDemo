@@ -4,7 +4,7 @@
 <gmp-map center="41.59,-93.62" zoom="7" map-id="MapAndWeatherMap">
     <gmp-place-autocomplete id="pac-input" slot="control-inline-start-block-start" class="controls" placeholder="Search location" />
 </gmp-map>
-
+@await Html.PartialAsync("_WeatherForcastPartial")
 
 @section HeadScripts {
     <script>
@@ -50,6 +50,10 @@
     <script>
         const mapElement = document.querySelector('gmp-map');
         const placeAutocomplete = document.querySelector('gmp-place-autocomplete');
+        const forecastModalElement = document.getElementById('weatherForecastModal');
+        let innerMap;
+        let forecastModal;
+        let marker;
         const init = async () => {
             const [] = await Promise.all([ 
                 google.maps.importLibrary("maps"),
@@ -62,48 +66,57 @@
             });
             marker = new google.maps.marker.AdvancedMarkerElement({
                 map: innerMap,
+                position: {lat: 41.59, lng: -93.62}
             });
-            placeAutocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
-                const place = placePrediction.toPlace();
-                await place.fetchFields({
-                    fields: ['displayName', 'formattedAddress', 'location'],
-                });
-                // If the place has a geometry, then present it on a map.
-                if (place.viewport) {
-                    innerMap.fitBounds(place.viewport);
-                }
-                else {
-                    innerMap.setCenter(place.location);
-                    innerMap.setZoom(13);
-                }
-                
-                marker.position = place.location;
-            });
-
-            // map.addListener("click", (mapsMouseEvent) => {
-            //     debugger;
-            //     const latLong = mapsMouseEvent.latLng.toJSON();
-            //     getWeatherForecast(latLong.lat, latLong.lng);
-            // });
-
+            forecastModal = bootstrap.Modal.getOrCreateInstance(forecastModalElement);
+            placeAutocomplete.addEventListener('gmp-select', placeSelected);
+            innerMap.addListener("click", mouseClicked);
         };
-        // const getWeatherForecast = async (lat, long) => {
-        //     const pointUrl = `https://api.weather.gov/points/${lat},${long}`;
-
-        //     const pointRes = await fetch(pointUrl, {
-        //         headers: { "User-Agent": "MapsAndWeatherApp" }
-        //     });
-
-        //     const pointJson = await pointRes.json();
-        //     const forecastUrl = pointJson.properties.forecast;
-
-        //     const forecastRes = await fetch(forecastUrl, {
-        //         headers: { "User-Agent": "MapsAndWeatherApp" }
-        //     });
-
-        //     const forecast = await forecastRes.json();
-        //     console.log(forecast.properties.periods);
-        // };
+        const mouseClicked = (mapsMouseEvent) => {
+            const latLong = mapsMouseEvent.latLng.toJSON();
+            forecastModal.toggle();
+            marker.position = latLong;
+            getWeatherForecast(mapsMouseEvent.latLng);
+        };
+        const placeSelected = async ({ placePrediction }) => {
+            const place = placePrediction.toPlace();
+            await place.fetchFields({
+                fields: ['displayName', 'formattedAddress', 'location'],
+            });
+            // If the place has a geometry, then present it on a map.
+            if (place.viewport) {
+                innerMap.fitBounds(place.viewport);
+            }
+            else {
+                innerMap.setCenter(place.location);
+                innerMap.setZoom(13);
+            }
+            marker.position = place.location;
+            getWeatherForecast(place.location)
+        };
+        const getWeatherForecast = async (latLong) => {
+            debugger;
+            const pointJson = await getPointsResponseJson(latLong);
+            const forecast = await getForecast(pointJson);
+            
+            console.log(forecast.properties.periods);
+        };
+        const getPointsResponseJson = async (latLng) => {
+            const lat = latLng.lat();
+            const lng = latLng.lng();
+            const pointUrl = `https://api.weather.gov/points/${lat},${lng}`;
+            const pointResonse = await fetch(pointUrl, {
+                headers: { "User-Agent": "MapsAndWeatherApp" }
+            });
+            return await pointResonse.json();
+        };
+        const getForecast = async (points) => {
+            const forecastUrl = points.properties.forecast;
+            const forecastResponse = await fetch(forecastUrl, {
+                headers: { "User-Agent": "MapsAndWeatherApp" }
+            });
+            return await forecastResponse.json();
+        };
         init();
     </script>
 
