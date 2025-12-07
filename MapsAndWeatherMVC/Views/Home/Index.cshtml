@@ -4,7 +4,8 @@
 <gmp-map center="41.59,-93.62" zoom="7" map-id="MapAndWeatherMap">
     <gmp-place-autocomplete id="pac-input" slot="control-inline-start-block-start" class="controls" placeholder="Search location" />
 </gmp-map>
-@await Html.PartialAsync("_WeatherForcastPartial")
+@await Html.PartialAsync("Partials/_WeatherForcastPartial")
+@await Html.PartialAsync("Partials/_ForecastCardTemplate")
 
 @section HeadScripts {
     <script>
@@ -54,27 +55,27 @@
         let innerMap;
         let forecastModal;
         let marker;
+        let geoCoder;
         const init = async () => {
             const [] = await Promise.all([ 
                 google.maps.importLibrary("maps"),
                 google.maps.importLibrary('marker'),
                 google.maps.importLibrary('places'),
             ]);
+            geoCoder = new google.maps.Geocoder();
             innerMap = mapElement.innerMap;
             innerMap.setOptions({
                 mapTypeControl: false
             });
             marker = new google.maps.marker.AdvancedMarkerElement({
-                map: innerMap,
-                position: {lat: 41.59, lng: -93.62}
+                map: innerMap
             });
             forecastModal = bootstrap.Modal.getOrCreateInstance(forecastModalElement);
             placeAutocomplete.addEventListener('gmp-select', placeSelected);
             innerMap.addListener("click", mouseClicked);
         };
         const mouseClicked = (mapsMouseEvent) => {
-            const latLong = mapsMouseEvent.latLng.toJSON();
-            forecastModal.toggle();
+            const latLong = mapsMouseEvent.latLng.toJSON();            
             marker.position = latLong;
             getWeatherForecast(mapsMouseEvent.latLng);
         };
@@ -95,11 +96,97 @@
             getWeatherForecast(place.location)
         };
         const getWeatherForecast = async (latLong) => {
-            debugger;
-            const pointJson = await getPointsResponseJson(latLong);
-            const forecast = await getForecast(pointJson);
+            $('#forecastCardContainer').empty();
+            forecastModal.show();
+            await setModalLoading(latLong);
+            try {
+                const pointJson = await getPointsResponseJson(latLong);
+                const forecast = await getForecast(pointJson);
             
-            console.log(forecast.properties.periods);
+                const forecastPeriods = forecast.properties.periods;
+                const html = generateForecastHTML(forecastPeriods, latLong);
+                $('#weatherForecastModal .modal-body').html(html);
+                console.log(forecast.properties.periods);
+            } catch (error) {
+                console.error("Error fetching or rendering forecast:", error);
+                $('weatherForecastModalTitle').text('Error');
+                $('#weatherForecastModal .modal-body').html(`<div class="alert alert-danger">Could not load forecast: ${error.message}</div>`);
+            }                        
+        };
+        const reverseGeocode = async (latLong) => {            
+            const resolveGeoCodePromise = (geoCodeArgs) =>{
+                return new Promise((resolve, reject) => {
+                    geoCoder.geocode(geoCodeArgs, (results, status) =>{
+                        if (status == 'OK') {
+                            resolve({results: results, status: status});
+                        }
+                        else{
+                            reject(new Error(`Geocoding failed. ${JSON.stringify(status)}`));
+                        }
+                    });
+                });
+            };
+            try {
+                const {results, status} = await resolveGeoCodePromise({location: latLong.toJSON()});
+                if (results){
+                    for (const result of results){
+                        for (const addressComponent of result.address_components){
+                            if (addressComponent.types.includes('locality')){
+                                return addressComponent.long_name;
+                            }
+                        }
+                    }
+                    return result.results[0].formatted_address;
+                }
+            }
+            catch(error){
+                console.log(error);
+            }
+            return `${latLong.lat().toFixed(2)}, ${latLong.lng().toFixed(2)}`;
+        };
+        const generateForecastHTML = (periods, latLong) => {
+            const container = $(`<div class="p-3">
+                                    <div class="row g-2 js-card-grid-target"></div>
+                                 </div>`);
+
+            // Get the hidden template element
+            const $template = $('.js-forecast-card-template');
+
+            // Loop through the forecast periods
+            for (let i = 0; i < Math.min(periods.length, 10); i++) {
+                const p = periods[i];
+
+                // 1. CLONE the template
+                const $newCard = $template.clone().removeClass('js-forecast-card-template').removeAttr('style');
+
+                // Determine CSS classes and text based on data
+                const isDaytime = p.isDaytime;
+                const bgColorClass = isDaytime ? 'bg-secondary-subtle' : 'bg-dark-subtle';
+                const textColorClass = isDaytime ? 'text-dark' : 'text-white';
+
+                // 2. POPULATE the cloned elements
+                $newCard.find('.js-card-bg')
+                    .removeClass('bg-secondary-subtle bg-dark-subtle text-dark text-white')
+                    .addClass(bgColorClass)
+                    .addClass(textColorClass);
+
+                $newCard.find('.js-forecast-name').text(p.name.split(' ')[0]);
+                $newCard.find('.js-daytime-status').text(isDaytime ? 'Day' : 'Night');
+                $newCard.find('.js-forecast-icon').attr('src', p.icon).attr('alt', p.shortForecast);
+                $newCard.find('.js-forecast-temp').text(`${p.temperature}°`);
+                $newCard.find('.js-forecast-short-desc').text(p.shortForecast).attr('title', p.detailedForecast);
+
+                // 3. APPEND to the temporary container
+                container.find('.js-card-grid-target').append($newCard);
+            }
+
+            // Return the full HTML string of the rendered container
+            return container.html();
+        };
+        const setModalLoading = async (latLong) => {
+            const result = await reverseGeocode(latLong);
+            $('#weatherForecastModalTitle').text(`Loading Forecast for ${result}`);
+            document.querySelector('#weatherForecastModal .modal-body').innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Fetching NOAA Data...</p></div>';
         };
         const getPointsResponseJson = async (latLng) => {
             const lat = latLng.lat();
