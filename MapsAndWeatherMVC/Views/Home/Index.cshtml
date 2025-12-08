@@ -1,11 +1,12 @@
 ﻿
-<div id="map_holder">
-   
-    <div id="map">
-        @* <input id="pac-input" class="controls" type="text" placeholder="Search location" />        *@
-    </div>
 
-</div>
+   
+<gmp-map center="41.59,-93.62" zoom="7" map-id="MapAndWeatherMap">
+    <gmp-place-autocomplete id="pac-input" slot="control-inline-start-block-start" class="controls" placeholder="Search location" />
+</gmp-map>
+@await Html.PartialAsync("Partials/_WeatherForcastPartial")
+@await Html.PartialAsync("Partials/_ForecastCardTemplate")
+
 @section HeadScripts {
     <script>
         (g => {
@@ -48,42 +49,199 @@
 }
 @section Scripts {
     <script>
+        const mapElement = document.querySelector('gmp-map');
+        const placeAutocomplete = document.querySelector('gmp-place-autocomplete');
+        const forecastModalElement = document.getElementById('weatherForecastModal');
+        let innerMap;
+        let forecastModal;
+        let marker;
+        let geoCoder;
+        
         const init = async () => {
-
-            const { Map } = await google.maps.importLibrary("maps");
-
-            const desMoines = { lat: 41.59, lng: -93.62 };
-            const input = document.getElementById("pac-input");
-            const map = new Map(document.getElementById("map"), {
-                center: desMoines,
-                zoom: 12,
-                mapId: 'MapAndWeatherMap'
+            const [] = await Promise.all([ 
+                google.maps.importLibrary("maps"),
+                google.maps.importLibrary('marker'),
+                google.maps.importLibrary('places'),
+            ]);
+            geoCoder = new google.maps.Geocoder();
+            innerMap = mapElement.innerMap;
+            innerMap.setOptions({
+                mapTypeControl: false
             });
-            map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
-
-            map.addListener("click", (mapsMouseEvent) => {
-                debugger;
-                const latLong = mapsMouseEvent.latLng.toJSON();
-                getWeatherForecast(latLong.lat, latLong.lng);
+            marker = new google.maps.marker.AdvancedMarkerElement({
+                map: innerMap
             });
-
+            forecastModal = bootstrap.Modal.getOrCreateInstance(forecastModalElement);
+            placeAutocomplete.addEventListener('gmp-select', placeSelected);
+            innerMap.addListener("click", mouseClicked);
         };
-        const getWeatherForecast = async (lat, long) => {
-            const pointUrl = `https://api.weather.gov/points/${lat},${long}`;
+        const mouseClicked = (mapsMouseEvent) => {
+            const latLong = mapsMouseEvent.latLng.toJSON();            
+            marker.position = latLong;
+            getWeatherForecast(mapsMouseEvent.latLng);
+        };
+        const placeSelected = async ({ placePrediction }) => {
+            const place = placePrediction.toPlace();
+            await place.fetchFields({
+                fields: ['displayName', 'formattedAddress', 'location'],
+            });
+            // If the place has a geometry, then present it on a map.
+            if (place.viewport) {
+                innerMap.fitBounds(place.viewport);
+            }
+            else {
+                innerMap.setCenter(place.location);
+                innerMap.setZoom(13);
+            }
+            marker.position = place.location;
+            getWeatherForecast(place.location)
+        };
+        const getWeatherForecast = async (latLong) => {
+            $('#forecastCardContainer').empty();
+            await setModalLoading(latLong);
+            forecastModal.show();            
+            try {
+                const pointJson = await getPointsResponseJson(latLong);
+                const forecast = await getForecast(pointJson);
+            
+                const forecastPeriods = forecast.properties.periods;
+                const html = generateForecastHTML(forecastPeriods, latLong);
+                $('#weatherForecastModal .modal-body').html(html);
+                setModalDone();
+                console.log(forecast.properties.periods);
+            } catch (error) {
+                console.error("Error fetching or rendering forecast:", error);
+                $('weatherForecastModalTitle').text('Error');
+                $('#weatherForecastModal .modal-body').html(`<div class="alert alert-danger">Could not load forecast: ${error.message}</div>`);
+            }                        
+        };
+        const reverseGeocode = async (latLong) => {            
+            const resolveGeoCodePromise = (geoCodeArgs) =>{
+                return new Promise((resolve, reject) => {
+                    geoCoder.geocode(geoCodeArgs, (results, status) =>{
+                        if (status == 'OK') {
+                            resolve({results: results, status: status});
+                        }
+                        else{
+                            reject(new Error(`Geocoding failed. ${JSON.stringify(status)}`));
+                        }
+                    });
+                });
+            };
+            try {
+                const {results, status} = await resolveGeoCodePromise({location: latLong.toJSON()});
+                if (results){
+                    for (const result of results){
+                        for (const addressComponent of result.address_components){
+                            if (addressComponent.types.includes('locality')){
+                                return addressComponent.long_name;
+                            }
+                        }
+                    }
+                    return result.results[0].formatted_address;
+                }
+            }
+            catch(error){
+                console.log(error);
+            }
+            return `${latLong.lat().toFixed(2)}, ${latLong.lng().toFixed(2)}`;
+        };
+        const groupPeriodsByDay = (periods) => {
+            const groupedDays = {};
+            const maxDays = 4;
+            let dayCount = 0;
+            let lastKey = '';
 
-            const pointRes = await fetch(pointUrl, {
+            for (const period of periods){
+                const periodDate = new Date(period.startTime);
+                const key = periodDate.toLocaleDateString(navigator.language, { weekday: 'short' });
+                if (key !== lastKey){
+                    if (dayCount >= maxDays){
+                        break;
+                    }
+                    ++dayCount;
+                    lastKey = key;
+                    groupedDays[key] = [];
+                } 
+                groupedDays[key].push(period);
+            }
+            return groupedDays;
+        };
+        const createCardElement = (p, template) => {
+            const newCard = template.clone().removeClass('forecast-card-template').removeAttr('style');
+            newCard.find('.daytime-status').text(p.isDaytime ? 'Day' : 'Night');
+            newCard.find('.forecast-icon').attr('src', p.icon).attr('alt', p.shortForecast);
+            newCard.find('.forecast-temp').text(`${p.temperature}°${p.temperatureUnit}`);
+            newCard.find('.forecast-wind').text(`${p.windSpeed} ${p.windDirection}`);
+            newCard.find('.forecast-short-desc').text(p.shortForecast).attr('title', p.detailedForecast);
+
+            return newCard;
+        };
+        const generateForecastHTML = (periods, latLong) => {
+            if (!periods || periods.length === 0) {
+                return '<div class="p-3">Forecast data is currently unavailable.</div>';
+            }
+
+            const groupedDays = groupPeriodsByDay(periods);
+            const dayKeys = Object.keys(groupedDays);
+
+            const template = $('.forecast-card-template');
+            const container = $(`<div class="d-flex flex-row flex-nowrap overflow-auto py-2"></div>`);
+
+            for (const dayKey of dayKeys) {
+                const dayPeriods = groupedDays[dayKey];
+                const morning = dayPeriods.find(p => p.isDaytime) || null;
+                const night = dayPeriods.find(p => !p.isDaytime) || null;
+
+                // Create the column for the current day
+                const dayColumn = $(`<div class="d-flex flex-column text-dark" style="min-width: 120px; flex: 1 0 20%; margin-right: 15px;">
+                                         <h6 class="text-center mb-2 fw-bold">${dayKey}</h6>
+                                      </div>`);
+
+                // --- 1. Morning/Day Card (Top Slot) ---
+                if (morning) {
+                    const morningCard = createCardElement(morning, template);
+                    dayColumn.append(morningCard);
+                }
+                // --- 2. Night Card (Bottom Slot) ---
+                if (night) {
+                    const nightCard = createCardElement(night, template);
+                    dayColumn.append(nightCard);
+                }
+                container.append(dayColumn);
+            }
+            return `
+                <div class="p-4 text-dark">      
+                    ${container.prop('outerHTML')}
+                </div>
+            `;
+        };
+        const setModalDone = () => {
+            const title = $('#weatherForecastModalTitle');
+            let text = title.text();
+            let idx = text.indexOf(' ');
+            title.text(text.substring(idx + 1).trim());
+        };
+        const setModalLoading = async (latLong) => {
+            const result = await reverseGeocode(latLong);
+            $('#weatherForecastModalTitle').text(`Loading Forecast for ${result}`);
+            document.querySelector('#weatherForecastModal .modal-body').innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Fetching NOAA Data...</p></div>';
+        };
+        const getPointsResponseJson = async (latLng) => {
+            const lat = latLng.lat();
+            const lng = latLng.lng();
+            const pointUrl = `https://api.weather.gov/points/${lat},${lng}`;
+            const pointResonse = await fetch(pointUrl, {
                 headers: { "User-Agent": "MapsAndWeatherApp" }
             });
-
-            const pointJson = await pointRes.json();
-            const forecastUrl = pointJson.properties.forecast;
-
-            const forecastRes = await fetch(forecastUrl, {
+            return await pointResonse.json();
+        };
+        const getForecast = async (points) => {
+            const forecastUrl = points.properties.forecast;
+            const forecastResponse = await fetch(forecastUrl, {
                 headers: { "User-Agent": "MapsAndWeatherApp" }
             });
-
-            const forecast = await forecastRes.json();
-            console.log(forecast.properties.periods);
+            return await forecastResponse.json();
         };
         init();
     </script>

@@ -3,10 +3,9 @@ using MapsAndWeatherService.Interfaces;
 
 namespace MapsAndWeatherMVC.MiddleWare
 {
-    public class RequestLoggerMiddleWare(RequestDelegate next, ILogService logService)
+    public class RequestLoggerMiddleWare(RequestDelegate next)
     {
-
-        public async Task InvokeAsync(HttpContext context)
+        public async Task InvokeAsync(HttpContext context, ILogService logService)
         {
             string? clientIp = context.Connection.RemoteIpAddress?.ToString();
             string path = context.Request.Path;
