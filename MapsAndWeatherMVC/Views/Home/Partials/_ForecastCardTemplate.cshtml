@@ -1,16 +1,11 @@
-﻿
-<div class="col-6 col-md-3 col-lg-2 mb-3 js-forecast-card-template" style="display: none;">
-    <div class="card h-100 p-2 border-0 rounded-3 text-center shadow-sm js-card-bg">
-        <h6 class="card-title mb-0 fw-bold js-forecast-name"></h6>
-        <small class="text-muted mb-2 js-daytime-status"></small>
-
-        <img src="" alt="" class="card-img-top mx-auto js-forecast-icon" style="width: 50px; height: 50px;">
-
+﻿<div class="mb-2 forecast-card-template" style="display: none;">
+    <div class="card h-100 p-2 border border-dark rounded-3 text-center shadow-sm text-dark" style="background-color: white;">
+        <h6 class="card-title mb-0 fw-bold daytime-status"></h6>        
+        <img src="" alt="" class="card-img-top mx-auto forecast-icon" style="width: 50px; height: 50px;">
         <div class="card-body p-1">
-            <p class="card-text mb-0 fs-5 fw-bolder js-forecast-temp"></p>
-            <small class="text-truncate d-block js-forecast-short-desc"></small>
+            <p class="card-text mb-0 fs-5 fw-bolder forecast-temp"></p>
+            <small class="d-block text-muted fw-bold forecast-wind"></small>
+            <small class="text-truncate d-block forecast-short-desc text-muted"></small>
         </div>
     </div>
 </div>
-
-<div id="forecastCardContainer" class="row g-2" style="display: none;"></div>
